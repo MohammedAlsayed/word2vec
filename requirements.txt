@@ -1,0 +1,7 @@
+sklearn
+numpy
+tqdm
+scikit_learn
+gensim
+spacy
+matplotlib
