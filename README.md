@@ -1,41 +1,41 @@
 # Implementation
-- In this code CBOW was implemented with a 128 embedding and 128 hidden dimension connected to the final layer equal to the size of vocab
+- In this code CBOW was implemented with a 128 embedding dim and 128 hidden dime connected to a fully connected layer that is the same size of the vocab, and using cross entropy as the loss function.
 
-	CBOW(
-	(embed): Embedding(3000, 128)
-	(linear1): Linear(in_features=128, out_features=128, bias=True)
-	(linear2): Linear(in_features=128, out_features=3000, bias=True)
-	)
+		CBOW(
+		(embed): Embedding(3000, 128)
+		(linear1): Linear(in_features=128, out_features=128, bias=True)
+		(linear2): Linear(in_features=128, out_features=3000, bias=True)
+		)
 
 # Results
-- There wasn't alot of hyperparameter choosing except for the word embedding space and optimization alogrithm choice. The first was choosen following the 2^x convention used in CS, the latter was chosen because the SGD wasn't always performin well in terms of accuracy while training, however, Adam had a much stable values accross multiple tests.
+- There wasn't alot of hyperparameter tuning except for how to choose the embedding space of the vocab words, and the optimization alogrithm. The first was choosen following the power of 2 convention used in CS applications, the latter was chosen because the SGD wasn't always stable terms of gradient decent (accuracy get's stuck sometimes), however, Adam was much stable accross multiple tests.
 
 ## In Vitro
 
-1- The first test was done with a context_size = 4 and 30 epochs, after the 10th epoch the training accuracy didn't increase much, stablizing around 0.4, same as well with the validation. Plots shared below
+1- The first test was done with a context_size = 4 and 30 epochs, after the 10th epoch the training accuracy didn't increase much, stablizing around 0.4, same as well with the validation accuracy. Plots shared below
 ![context-4-train](plots/train_acc_loss_context_4.png)
 ![context-4-val](plots/validation_acc_loss_context_4.png)
 
-2- The second test was done with a context size = 2 and 7 epochs. The training and validation accuracy were around 0.34. 
+2- The second test was done with a context size = 2 and 7 epochs, the reason of decreasing the number of epochs is the limited time that I had. The training and validation accuracy were around 0.34. 
 ![context-2-train](plots/train_acc_loss_context_2.png)
 ![context-2-val](plots/validation_acc_loss_context_2.png)
 
 ### Discussion
 
-- We can see that the accuracy of the context_size = 4 is higher than the context_size = 2, though a bigger context is a harder task. So my context was formulated is that if there is was at least one word and all the other is padding it will still be add to the dataset. So, this means I can have a context like ("I'm", "<pad>", "<pad>", "<pad>") which makes the prediction task easier for couple of records. On the contrary, the smaller context = 2 will have less padding context in it's examples. What supports my argument is when I tried with context size = 8 my train/val accuracy jumped to 0.5 as in the pic below
+- We can see that the accuracy of the context_size = 4 is higher than the context_size = 2, though a bigger context is a harder task. The reason behind that the way I formulated the context. So, a target word has at least one context word that is not `<pad>` then it is going to be added in the input/output tensors data. So, this means I can have a context like (`I'm`, `<pad>`, `<pad>`, `<pad>`) which makes the prediction task easier for large context sizes. On the contrary, the smaller context that equals 2 will have less padding in it's input/output tensors data. What supports my argument is when I tried with context size = 8 my train/val accuracy jumped to 0.5 as in the pic below
 ![context-8-train](plots/train_acc_loss_context_8.png)
 ![context-8-val](plots/validation_acc_loss_context_8.png)
 
 ## In Vivo
 
-There are 3 metric measures used in this part of the evaluation. Exact, Mean Reciprocal Rank (MRR), MR (don't know stands for what). 
-- ِExact measures how many matches were in the first place in the list, which means that the word2vec found the expected match as the closest embedding of the query. This measure depends on how accurate our true dataset is, so if there are other words that can be an exact match as well this measure won't display accurate results.
-- MRR, measures all the query reuslts in the list with a reverse rank order of the list. So, the further the result the less MRR is going to be. If the model performs very poor this score is going to be close to zero, otherwise around 1.
-- MR, measures total/correct, which seems as a variance measure. So, if we have a very good model and total = correct the result is going to 1. If we had a very poor model correct is going to be a fraction which will result in a large MR score.
+There are 3 metric measures used in this part of the evaluation. Exact, Mean Reciprocal Rank (MRR), MR (don't know stands for what). The definition of each is below: 
+- ِ**Exact**: measures how many matches were in the first index of the result list, which means that the word2vec found the expected match as the first result of the query. Cons of this measure that it depends on how accurate our true dataset is, so if there are other words that can be an exact match as well this measure won't display an accurate result.
+- MRR, measures all the query reuslts in the list with a reverse rank order of the result in the list. So, the further the result is the less MRR is going to be. If the model performs very poor this score is going to be close to zero, otherwise around 1 if the model performs well.
+- MR, measures total/correct, which seems as a variance measure. In other words, how spread are the matching words in the query list. So, if we had a very good model and total = correct the result is going to be closer to 1. If we had a very poor model, correct is going to be a fraction which means the matched results are further in the query's reuslt list; consequently MR score going to be higher.
 
 ### Discussion
 
-Below is the result of the in-vivo evaluation, I was suspecting that the small context window (size = 2) model will perform better on "syn" relation type, but context window 4 performed better on all levels except on `denonym`. Window size = 8 didn't perform better than window size = 4 and the reason is the paddings that I kept in the context. A better approach maybe is only having context that doesn't have any padding. I didn't have time to try that out. 
+Below is the result of the in-vivo evaluation, I was suspecting that the small context window (size = 2) model will perform better on "syn" relation type, but context window 4 performed better on all levels except on `denonym`. Maybe the reason of why size 4 performed better is that size 2 is too small to capture syn relations. That's why I tried Window size = 8 but it didn't perform better than window size = 4 and I guess the reason is the paddings that I kept in the context (explained in the previous discussion). A better approach is going to be only having context as an input/output tensor if there isn't any padding. I didn't have time to try that out. 
 
 ### Context Size 4
 
