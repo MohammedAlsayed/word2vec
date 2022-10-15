@@ -5,7 +5,7 @@ import torch.optim as optim
 
 class CBOW(nn.Module):
 
-    def __init__(self, vocab_size, embedding_dim, context_size):
+    def __init__(self, vocab_size, embedding_dim):
         super(CBOW, self).__init__()
         self.vocab_size = vocab_size
         self.embedding_dim = embedding_dim
@@ -15,7 +15,7 @@ class CBOW(nn.Module):
 
     def forward(self, inputs):
         embeds = self.embed(inputs)
-        embeds = torch.sum(embeds, dim=0).reshape((1,-1))
+        embeds = torch.sum(embeds, dim=1)
         # embeds = torch.mean(embeds, dim=0).reshape((1,-1))
         hidden = F.relu(self.linear1(embeds)) 
         out = self.linear2(hidden)           

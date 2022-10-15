@@ -1,79 +1,129 @@
+# Implementation
+- In this code CBOW was implemented with a 128 embedding and 128 hidden dimension connected to the final layer equal to the size of vocab
 
-# Coding Assignment #2
+	CBOW(
+	(embed): Embedding(3000, 128)
+	(linear1): Linear(in_features=128, out_features=128, bias=True)
+	(linear2): Linear(in_features=128, out_features=3000, bias=True)
+	)
 
-In this assignment, you will implement a neural language model that produces word embeddings based on the original [Word2Vec](https://arxiv.org/abs/1301.3781) paper.
+# Results
+- There wasn't alot of hyperparameter choosing except for the word embedding space and optimization alogrithm choice. The first was choosen following the 2^x convention used in CS, the latter was chosen because the SGD wasn't always performin well in terms of accuracy while training, however, Adam had a much stable values accross multiple tests.
 
-Your corpus for learning word embeddings will be the top 30 most downloaded Project Gutenberg books at the time of assignment creation (don't worry, there's a script). Your model will learn over a vocabulary of 3000 tokens, and will be evaluated in vitro via the language modeling task for which it's being trained, as well as in vivo via the analogical reasoning task we discussed in class. The analogy dataset is curated such that with a vocab size of 3000 and the given books corpus, every analogy word will be represented with a token in the downstream evaluation.
+## In Vitro
 
-The starter code handles a lot of what you've learned already: turning raw book files into sentences, tokenization, and encoding sentences into machine-readable vectors. The analogical reasoning evaluation is also already implemented.
+1- The first test was done with a context_size = 4 and 30 epochs, after the 10th epoch the training accuracy didn't increase much, stablizing around 0.4, same as well with the validation. Plots shared below
+![context-4-train](plots/train_acc_loss_context_4.png)
+![context-4-val](plots/validation_acc_loss_context_4.png)
 
-What you'll need to do is turn your encoded sentences into data pairs (inputs and outputs) that your model can learn from, as well as implement the model itself. 
+2- The second test was done with a context size = 2 and 7 epochs. The training and validation accuracy were around 0.34. 
+![context-2-train](plots/train_acc_loss_context_2.png)
+![context-2-val](plots/validation_acc_loss_context_2.png)
 
-## Install some packages
+### Discussion
 
-```
-# first create a virtualenv 
-virtualenv -p $(which python3) ./venv
+- We can see that the accuracy of the context_size = 4 is higher than the context_size = 2, though a bigger context is a harder task. So my context was formulated is that if there is was at least one word and all the other is padding it will still be add to the dataset. So, this means I can have a context like ("I'm", "<pad>", "<pad>", "<pad>") which makes the prediction task easier for couple of records. On the contrary, the smaller context = 2 will have less padding context in it's examples. What supports my argument is when I tried with context size = 8 my train/val accuracy jumped to 0.5 as in the pic below
+![context-8-train](plots/train_acc_loss_context_8.png)
+![context-8-val](plots/validation_acc_loss_context_8.png)
 
-# activate virtualenv
-source ./venv/bin/activate
+## In Vivo
 
-# install packages
-pip3 install -r requirements.txt
+There are 3 metric measures used in this part of the evaluation. Exact, Mean Reciprocal Rank (MRR), MR (don't know stands for what). 
+- ِExact measures how many matches were in the first place in the list, which means that the word2vec found the expected match as the closest embedding of the query. This measure depends on how accurate our true dataset is, so if there are other words that can be an exact match as well this measure won't display accurate results.
+- MRR, measures all the query reuslts in the list with a reverse rank order of the list. So, the further the result the less MRR is going to be. If the model performs very poor this score is going to be close to zero, otherwise around 1.
+- MR, measures total/correct, which seems as a variance measure. So, if we have a very good model and total = correct the result is going to 1. If we had a very poor model correct is going to be a fraction which will result in a large MR score.
 
-# download books [creates a local directory called 'books/']
-chmod +x get_books.sh
-./get_books
-```
+### Discussion
 
-## Train and evaluate model
+Below is the result of the in-vivo evaluation, I was suspecting that the small context window (size = 2) model will perform better on "syn" relation type, but context window 4 performed better on all levels except on `denonym`. Window size = 8 didn't perform better than window size = 4 and the reason is the paddings that I kept in the context. A better approach maybe is only having context that doesn't have any padding. I didn't have time to try that out. 
 
-The training file will throw some errors out of the box. You will need to fill in the TODOs before anything starts to train.
-While debugging, consider taking a small subset of the data and inserting break statements in the code and print the values of your variables.
+### Context Size 4
 
-```
-Train:
-python3 train.py \
-    --analogies_fn analogies_v3000_1309.json \
-    --data_dir books/ \
+	...Total performance across all 1309 analogies: 0.0168 (Exact); 0.0352 (MRR); 28 (MR)
+	...Analogy performance across 969 "sem" relation types: 0.0062 (Exact); 0.0188 (MRR); 53 (MR)
+		relation			N	exact	MRR		MR
+		capitals			1	0.0000	0.0667	15
+		binary_gender		12	0.0833	0.2418	4
+		antonym				54	0.0370	0.0555	18
+		member				4	0.2500	0.2750	4
+		hypernomy			542	0.0037	0.0144	69
+		similar				117	0.0000	0.0111	90
+		partof				29	0.0000	0.0153	65
+		instanceof			9	0.0000	0.0144	70
+		derivedfrom			133	0.0000	0.0070	143
+		hascontext			32	0.0000	0.0100	100
+		relatedto			10	0.0000	0.0016	630
+		attributeof			11	0.0000	0.0084	118
+		causes				6	0.0000	0.0132	76
+		entails				9	0.0000	0.0054	185
+	...Analogy performance across 340 "syn" relation types: 0.0471 (Exact); 0.0817 (MRR); 12 (MR)
+		relation			N	exact	MRR		MR
+		adj_adv				22	0.0000	0.0088	114
+		comparative			7	0.1429	0.2051	5
+		superlative			3	0.0000	0.0377	27
+		present_participle	62	0.0161	0.0514	19
+		denonym				2	0.0000	0.0000	inf
+		past_tense			64	0.0469	0.1114	9
+		plural_nouns		107	0.0561	0.0923	11
+		plural_verbs		73	0.0685	0.0803	12
 
-Evaluation:
-python train.py \
-    --analogies_fn analogies_v3000_1309.json \
-    --data_dir books/ \
-    --downstream_eval
+### Context Size 2
 
-# add any additional argments you may need
-```
+	...Total performance across all 1309 analogies: 0.0061 (Exact); 0.0152 (MRR); 66 (MR)
+	...Analogy performance across 969 "sem" relation types: 0.0021 (Exact); 0.0092 (MRR); 108 (MR)
+		relation		N	exact	MRR		MR
+		capitals		1	0.0000	0.0147	68
+		binary_gender	12	0.0833	0.1502	7
+		antonym			54	0.0000	0.0161	62
+		member			4	0.0000	0.0060	165
+		hypernomy		542	0.0000	0.0054	186
+		similar			117	0.0085	0.0163	61
+		partof			29	0.0000	0.0033	302
+		instanceof		9	0.0000	0.0056	180
+		derivedfrom		133	0.0000	0.0057	176
+		hascontext		32	0.0000	0.0135	74
+		relatedto		10	0.0000	0.0014	713
+		attributeof		11	0.0000	0.0037	268
+		causes			6	0.0000	0.0011	878
+		entails			9	0.0000	0.0027	377
+	...Analogy performance across 340 "syn" relation types: 0.0176 (Exact); 0.0324 (MRR); 31 (MR)
+		relation			N	exact	MRR		MR
+		adj_adv				22	0.0000	0.0086	117
+		comparative			7	0.0000	0.0188	53
+		superlative			3	0.0000	0.0007	1440
+		present_participle	62	0.0000	0.0242	41
+		denonym				2	0.0000	0.0029	340
+		past_tense			64	0.0156	0.0317	32
+		plural_nouns		107	0.0374	0.0440	23
+		plural_verbs		73	0.0137	0.0335	30
 
 
-## Grading
+### Context Size 8
 
-In this assignment you **may not** use HuggingFace libraries and implementations. Anything in the base `torch` library is fair game, however.
-This assignment will be scored out of 30 points on the *correctness* and *documentation detail and accuracy*. Note that the report is weighted higher this time; the Report is an opportunity for you to explain your code, choices, and experiments. The point breakdown is:
-
-- [ ] (5pt) Turning the encoded input data into input/output tensors for your model
-- [ ] (15pt) Implementation of EITHER the CBOW model or the Continuous Skip-Gram model and associated training paradigm; you can use a fixed context window for skip-gram rather than sampling
-- [ ] (10pt) *Report* your results through an .md file in your submission; discuss your implementation choices and document the performance of your model (both training and validation performance, both in vitro and in vivo) under the conditions you settled on (e.g., what hyperparameters you chose) and discuss why these are a good set. If you implemented any bonus experiments, detail those in clearly delineated sections as well. Finally, in this report I'd also like you to do a little bit of analysis of the released code and discuss what's going on. In particular, what are the in vitro and in vivo tasks being evaluated? On what metrics are they measured? If there are assumptions or simplifications that can affect the metrics, what are they and what might go "wrong" with them that over- or under-estimate model performance?
-
-Remember that each coding assignment will be worth 30 points, for a total of 90 points towards coding assignments which account for 25% of your course grade. The remaining 10 points to round out to 100 are based on discussions we have in class during coding assignment "debrief" sessions (i.e., participation points).
-
-## Submission checklist
-
-- Submit a link to your public github repository containing your solution for the homework.
-- Your repository should contain:
-    1. .py files provided with your solution implementation along with any additional files you may need
-    2. `.md` file (see above) 
-    3. 4 images: `training_loss.png, training_acc.png, validation_loss.png, validation_acc.png`
-    4. The text output of the in vivo evaluation for analogies, though this would be prettier as graphs across choices, of course.
-
-## Available Bonus Points
-
-You may earn up to 10pt of *bonus points* (and ONLY up to 10) by implementing the following bells and whistles that explore further directions. For these, you will need to compare the performance of the base model against whatever addition you try. Add those details to your report. If you implement bonus items, your base code implementing the main assignment must remain intact and be runnable still. I have ordered these by my rough estimate of the implementation and experiment difficulty of each.
-
-- [ ] (*5pt*) Analyze the performance of your learned embeddings against the much larger-scale-pretraining [word2vec](https://mccormickml.com/2016/04/12/googles-pretrained-word2vec-model-in-python/), [GLoVE](https://nlp.stanford.edu/projects/glove/), or [FastText](https://fasttext.cc/) embeddings. You may have to modify the gensim vector reading or do some preprocessing to shove pretrained vectors into the right format for the in vivo eval. Your comparison should include experiments that back hypotheses about performance differences you observe.
-- [ ] (*5pt*) We have hypothesized that the context window size affects syntactic versus semantic performance. Evaluate that hypothesis with your model by varying the context window and looking for relationships to syntax versus semantic analogical task performance.
-- [ ] (*10pt*) Perform a detailed analysis of the data itself or of your model's performance on the data. This bonus is very open ended, and points will be based on the soundness of the implementation as well as the insights gained and written up in the report. For example, you could cluster learned embeddings to look for emergent relationships, analyze which analogies your model gets wrong with high confidence (e.g., most probability mass on the wrong choice at prediction time) and see, qualitatively, if you can identify systematic misclassifications of that type and hypothesize about why they happen, etc.
-- [ ] (*10pt*) Implement the OTHER of CBOW or Continuous Skip-Gram model and compare the performance of the two with the same context window sizes.
-- [ ] (*5pt-10pt*) Add the context window sampling scheme we discussed in class so that your context window varies. Detail your implementation choices carefully and compare performance against a fixed-size window. Note that to make this change for CBOW, you'll have to introduce some tricks to your encoding and switch from SUM to AVERAGE as your aggregation so that different context window sizes produce embeddings of the same magnitude. (Up to 5pt each for implementation to each of CBOW versus Skip-Gram).
-- [ ] (*10pt*) Context windows near sentence boundaries are tricky to handle. What if you change the encoding approach to consider words on the other side of sentence boundaries? You'll have to change the encoding functions to get adjacent sentences, but then you can try letting the context window spill between sentence boundaries. How does this affect performance? 
+	...Total performance across all 1309 analogies: 0.0015 (Exact); 0.0086 (MRR); 117 (MR)
+	...Analogy performance across 969 "sem" relation types: 0.0010 (Exact); 0.0072 (MRR); 138 (MR)
+		relation			N	exact	MRR		MR
+		capitals			1	0.0000	0.0000	inf
+		binary_gender		12	0.0000	0.0167	60
+		antonym				54	0.0000	0.0028	359
+		member				4	0.0000	0.0008	1213
+		hypernomy			542	0.0000	0.0080	125
+		similar				117	0.0000	0.0027	375
+		partof				29	0.0000	0.0028	360
+		instanceof			9	0.0000	0.0259	39
+		derivedfrom			133	0.0000	0.0040	249
+		hascontext			32	0.0000	0.0026	389
+		relatedto			10	0.1000	0.1002	10
+		attributeof			11	0.0000	0.0004	2726
+		causes				6	0.0000	0.0029	346
+		entails				9	0.0000	0.0048	206
+	...Analogy performance across 340 "syn" relation types: 0.0029 (Exact); 0.0124 (MRR); 81 (MR)
+		relation			N	exact	MRR		MR
+		adj_adv				22	0.0000	0.0009	1152
+		comparative			7	0.0000	0.0201	50
+		superlative			3	0.0000	0.0016	628
+		present_participle	62	0.0000	0.0212	47
+		denonym				2	0.0000	0.0018	557
+		past_tense			64	0.0000	0.0151	66
+		plural_nouns		107	0.0000	0.0032	310
+		plural_verbs		73	0.0137	0.0194	51

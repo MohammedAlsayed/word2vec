@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-
+import time
 import argparse
 from cProfile import label
 from contextlib import ContextDecorator
 import os
+from venv import create
 import tqdm
 import torch
 import torch.optim as optim
@@ -15,9 +16,10 @@ from eval_utils import downstream_validation
 import utils
 import data_utils
 from model import CBOW
-import matplotlib as plt
+import matplotlib.pyplot as plt
+import torch.nn.functional as F
 
-def setup_dataloader(args):
+def create_data_files(args):
     """
     return:
         - train_loader: torch.utils.data.Dataloader
@@ -54,31 +56,65 @@ def setup_dataloader(args):
     # ===================================================== #
 
     # create dataset
-    context_size = 1
+    context_size = args.context_size
+    t = []
+    x = []
+    counter = 0
+    with open(f'./datasets/context_{context_size}_data.txt', 'w') as f:
+        for s in tqdm.tqdm(encoded_sentences):
+            for index in range(context_size, len(s)-context_size):    
+                start = index - context_size
+                end = index + context_size + 1
+                context = [s[i] for i in range(start, end)if 0 <= i < len(s) and i != index]
+                f.write(",".join(str(c) for c in context))
+                f.write(f',{s[index]}\n')
+                counter +=1
+        print("#instances = ",counter)
+    
+
+def setup_dataloader(args):
+    
+
+     # read in training data from books dataset
+    sentences = data_utils.process_book_dir(args.data_dir)
+
+    # build one hot maps for input and output
+    (
+        vocab_to_index,
+        index_to_vocab,
+        suggested_padding_len,
+    ) = data_utils.build_tokenizer_table(sentences, vocab_size=args.vocab_size)
+
+    # create encoded input and output numpy matrices for the entire dataset and then put them into tensors
+    encoded_sentences, lens = data_utils.encode_data(
+        sentences,
+        vocab_to_index,
+        suggested_padding_len,
+    )
+    context_size = args.context_size
     context = []
     target = []
-    for s in encoded_sentences[0:10]:
+    for s in tqdm.tqdm(encoded_sentences):
         for idx in range(context_size, len(s)-context_size):
             word_context = []
-            t = [0] * args.vocab_size
             for c_idx in range(idx-context_size, idx+context_size+1):
                 # c_idx doesn't != target word
                 if c_idx != idx:
                     word_context.append(s[c_idx])
+            if sum(word_context) == 0 and s[idx] == 0:
+                continue
             context.append(word_context)
-            t[s[idx]] = 1
-            target.append(t)
+            target.append(s[idx])
 
     x = np.asarray(context)
     y = np.asarray(target)
     x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.33, random_state=42)
     train_dataset = TensorDataset(torch.from_numpy(x_train), torch.from_numpy(y_train))
     val_dataset = TensorDataset(torch.from_numpy(x_val), torch.from_numpy(y_val))
-    train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=128, shuffle=True)
 
-    return train_dataset, val_dataset, index_to_vocab
-
+    return train_loader, val_loader, index_to_vocab
 
 def setup_model(args):
     """
@@ -88,7 +124,7 @@ def setup_model(args):
     # ================== TODO: CODE HERE ================== #
     # Task: Initialize your CBOW or Skip-Gram model.
     # ===================================================== #
-    model = CBOW(args.vocab_size, args.embedding_dim, args.context_size)
+    model = CBOW(args.vocab_size, args.embedding_dim)
     return model
 
 
@@ -128,14 +164,14 @@ def train_epoch(
     for (inputs, labels) in tqdm.tqdm(loader):
         # put model inputs to device
         inputs, labels = inputs.to(device).long(), labels.to(device).float()
-        labels = labels.reshape(1, -1)
+        labels = F.one_hot(labels.to(torch.int64), num_classes=args.vocab_size)
+
         # calculate the loss and train accuracy and perform backprop
         # NOTE: feel free to change the parameters to the model forward pass here + outputs
         pred_logits = model(inputs)
-
         
         # calculate prediction loss
-        loss = criterion(pred_logits, labels)
+        loss = criterion(pred_logits, labels.float())
 
         # step optimizer and compute gradients during training
         if training:
@@ -190,6 +226,7 @@ def main(args):
         downstream_validation(word_vec_file, external_val_analogies)
         return
 
+    # create_data_files(args)
     # get dataloaders
     train_loader, val_loader, i2v = setup_dataloader(args)
     loaders = {"train": train_loader, "val": val_loader}
@@ -199,7 +236,7 @@ def main(args):
     model.to(device)
     print(model)
 
-    # get optimizer
+    # # get optimizer
     criterion, optimizer = setup_optimizer(args, model)
 
     train_accuracies = []
@@ -207,7 +244,10 @@ def main(args):
 
     val_accuracies = []
     val_losses = []
-    epochs = [i for i in range(1, args.num_epochs+1)]
+    train_epochs = [i for i in range(1, args.num_epochs+1)]
+    val_epochs = []
+
+    st = time.time()
     for epoch in range(args.num_epochs):
         # train model for a single epoch
         print(f"Epoch {epoch}")
@@ -232,6 +272,7 @@ def main(args):
                 criterion,
                 device
             )
+            val_epochs.append(epoch)
             val_accuracies.append(val_acc)
             val_losses.append(val_loss)
             print(f"val loss : {val_loss} | val acc: {val_acc}")
@@ -246,47 +287,58 @@ def main(args):
             # ===================================================== #
         # save the plots 
         if epoch == args.num_epochs-1:
+            print("plotting training")
             fig, ax = plt.subplots(1, 2, figsize=(10, 4))
-            ax[0].plot(epochs, train_accuracies, 'b', label='training accuracy')
+            
+            ax[0].plot(train_epochs, train_accuracies, 'b', label='training accuracy')
             ax[0].set_title('Training Accuracy')
             ax[0].set_xlabel('Epochs')
             ax[0].set_ylabel('Accuracy')
             ax[0].legend()
 
-            ax[1].plot(epochs, train_losses, 'r', label='training loss')
+            ax[1].plot(train_epochs, train_accuracies, 'r', label='training loss')
             ax[1].set_title('Training loss')
             ax[1].set_xlabel('Epochs')
             ax[1].set_ylabel('Loss')
             ax[1].legend()
-            fig.savefig(f'./plots/train_acc_loss_context{args.context_size}.png')
+            fig.savefig(f'./plots/train_acc_loss_context_{args.context_size}.png')
 
+            print("plotting validation")
             fig, ax = plt.subplots(1, 2, figsize=(10, 4))
-            ax[0].plot(epochs, val_accuracies, 'b', label='validation accuracy')
+            ax[0].plot(val_epochs, val_accuracies, 'b', label='validation accuracy')
             ax[0].set_title('Validation Accuracy')
             ax[0].set_xlabel('Epochs')
             ax[0].set_ylabel('Accuracy')
             ax[0].legend()
 
-            ax[1].plot(epochs, val_losses, 'r', label='validation loss')
+            ax[1].plot(val_epochs, val_losses, 'r', label='validation loss')
             ax[1].set_title('Validation loss')
             ax[1].set_xlabel('Epochs')
             ax[1].set_ylabel('Loss')
             ax[1].legend()
-            fig.savefig(f'./plots/validation_acc_loss_context{args.context_size}.png')
+            fig.savefig(f'./plots/validation_acc_loss_context_{args.context_size}.png')
 
+            train_end_time = time.time()
+            print("training time = ", train_end_time-st , " sec")
 
         # save word vectors in last epoch
         if epoch == args.num_epochs-1:
-            word_vec_file = os.path.join(args.output_dir, args.word_vector_fn)
+            w2v_st = time.time()
+            word_vec_file = f'./results/learned_word_vectors_context_{args.context_size}.txt'
             print("saving word vec to ", word_vec_file)
             utils.save_word2vec_format(word_vec_file, model, i2v)
+            w2v_et = time.time()
+            print("time to save word2vec = ", w2v_et-w2v_st , " sec")
 
+            downstream_st = time.time()
             # evaluate learned embeddings on a downstream task
             downstream_validation(word_vec_file, external_val_analogies)
+            downstream_et = time.time()
+            print("downstream time = ", downstream_et-downstream_st , " sec")
 
         # save model in last epoch
         if epoch == args.num_epochs-1:
-            ckpt_file = os.path.join(args.output_dir, "model.ckpt")
+            ckpt_file = os.path.join(args.output_dir, f'model_context_{args.context_size}.ckpt')
             print("saving model to ", ckpt_file)
             torch.save(model, ckpt_file)
 
@@ -336,11 +388,11 @@ if __name__ == "__main__":
         default='learned_word_vectors.txt'
     )
     parser.add_argument(
-        "--num_epochs", default=30, type=int, help="number of training epochs"
+        "--num_epochs", default=7, type=int, help="number of training epochs"
     )
     parser.add_argument(
         "--val_every",
-        default=5,
+        default=3,
         type=int,
         help="number of epochs between every eval loop",
     )
